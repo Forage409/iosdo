@@ -1,65 +1,129 @@
 workflows:
-  ios-simulator-debug:
-    name: NowJot iOS Simulator Debug
-    max_build_duration: 120
+  ios-unsigned-ipa-for-resign:
+    name: NowJot Unsigned IPA (no certs needed)
     instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      xcode: latest
+      vars:
+        APP_NAME: "NowJot"
+        XCODE_PROJECT: "NowJot.xcodeproj"
+        XCODE_SCHEME: "NowJot"
+    scripts:
+      - name: Install XcodeGen
+        script: |
+          set -euo pipefail
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+      - name: Generate Xcode project
+        script: |
+          set -euo pipefail
+          xcodegen generate
+      - name: Validate repository guardrails
+        script: |
+          set -euo pipefail
+          python3 scripts/validate_workspace.py
+      - name: Build iPhoneOS app without signing
+        script: |
+          set -euo pipefail
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            clean build
+      - name: Package unsigned IPA
+        script: |
+          set -euo pipefail
+          APP_PATH=$(find "$HOME/Library/Developer/Xcode/DerivedData" -path "*/Build/Products/Release-iphoneos/$APP_NAME.app" -type d | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "$APP_NAME.app not found"
+            exit 1
+          fi
+          rm -rf "build/Payload" "build/$APP_NAME-unsigned.ipa"
+          mkdir -p build/Payload
+          cp -R "$APP_PATH" "build/Payload/$APP_NAME.app"
+          (cd build && zip -qry "$APP_NAME-unsigned.ipa" Payload)
+    artifacts:
+      - build/NowJot-unsigned.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - ~/Library/Developer/Xcode/DerivedData/**/Logs/**/*.xcresult
+
+  ios-debug-build:
+    name: NowJot iOS Simulator Debug Build
+    instance_type: mac_mini_m2
+    max_build_duration: 60
     environment:
       xcode: latest
       vars:
         XCODE_PROJECT: "NowJot.xcodeproj"
         XCODE_SCHEME: "NowJot"
-    triggering:
-      events:
-        - push
-      branch_patterns:
-        - pattern: "main"
-          include: true
-          source: true
     scripts:
+      - name: Install XcodeGen
+        script: |
+          set -euo pipefail
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+      - name: Generate Xcode project
+        script: |
+          set -euo pipefail
+          xcodegen generate
       - name: Validate repository guardrails
         script: |
           set -euo pipefail
           python3 scripts/validate_workspace.py
-      - name: Build unsigned simulator app
+      - name: Build simulator app
         script: |
           set -euo pipefail
-          xcodebuild build \
-            -project "$CM_BUILD_DIR/$XCODE_PROJECT" \
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" \
+            -configuration Debug \
             -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
-            -configuration Debug \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO | tee xcodebuild-simulator.log
+            CODE_SIGNING_ALLOWED=NO \
+            clean build
     artifacts:
-      - xcodebuild-simulator.log
-      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.app
-      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+      - ~/Library/Developer/Xcode/DerivedData/**/Build/Products/Debug-iphonesimulator/*.app
+      - ~/Library/Developer/Xcode/DerivedData/**/Logs/**/*.xcresult
 
-  ios-release-ipa:
-    name: NowJot iOS Release IPA
-    max_build_duration: 120
+  ios-signed-ipa:
+    name: NowJot Signed IPA
     instance_type: mac_mini_m2
+    max_build_duration: 60
     environment:
       xcode: latest
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.quang.nowjot
       vars:
         BUNDLE_ID: "com.quang.nowjot"
         XCODE_PROJECT: "NowJot.xcodeproj"
         XCODE_SCHEME: "NowJot"
     scripts:
+      - name: Install XcodeGen
+        script: |
+          set -euo pipefail
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+      - name: Generate Xcode project
+        script: |
+          set -euo pipefail
+          xcodegen generate
       - name: Validate repository guardrails
         script: |
           set -euo pipefail
           python3 scripts/validate_workspace.py
-      - name: Set up code signing settings
+      - name: Install certificate and provisioning profile
+        script: |
+          set -euo pipefail
+          keychain initialize
+          echo "$CERT_P12_BASE64" | base64 --decode > /tmp/nowjot_cert.p12
+          keychain add-certificates --certificate /tmp/nowjot_cert.p12 --certificate-password "$CERT_PASSWORD"
+          PROFILES_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PROFILES_DIR"
+          echo "$PROFILE_BASE64" | base64 --decode > "$PROFILES_DIR/nowjot.mobileprovision"
+      - name: Set up code signing settings on Xcode project
         script: |
           set -euo pipefail
           xcode-project use-profiles
-      - name: Build IPA for distribution
+      - name: Build signed IPA
         script: |
           set -euo pipefail
           xcode-project build-ipa \
@@ -68,5 +132,4 @@ workflows:
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
-      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.app
-      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+      - ~/Library/Developer/Xcode/DerivedData/**/Logs/**/*.xcresult

@@ -18,3 +18,12 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.quang.nowjot
         INFOPLIST_FILE: NowJot/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+schemes:
+  NowJot:
+    build:
+      targets:
+        NowJot: all
+    run:
+      config: Debug
+    archive:
+      config: Release
