@@ -98,19 +98,27 @@ def check_swift_structure() -> None:
 
 def check_project_references() -> None:
     pbx = (ROOT / "NowJot.xcodeproj" / "project.pbxproj").read_text(encoding="utf-8")
+    project_yml = (ROOT / "project.yml").read_text(encoding="utf-8")
     missing = [path.name for path in (ROOT / "NowJot").rglob("*.swift") if path.name not in pbx]
     if missing:
         fail(f"Swift files missing from project.pbxproj: {missing}")
     if "Assets.xcassets" not in pbx:
         fail("Assets.xcassets is missing from project.pbxproj")
-    for required in [
-        "SUPPORTED_PLATFORMS = \"iphoneos iphonesimulator\";",
-        "SUPPORTS_MACCATALYST = NO;",
-        "SWIFT_VERSION = 5.0;",
-        "INFOPLIST_FILE = NowJot/Info.plist;",
-    ]:
-        if required not in pbx:
-            fail(f"project.pbxproj is missing build setting: {required}")
+    required_project_tokens = [
+        "name: NowJot",
+        "iOS: \"17.0\"",
+        "SWIFT_VERSION: 5.0",
+        "type: application",
+        "platform: iOS",
+        "PRODUCT_BUNDLE_IDENTIFIER: com.quang.nowjot",
+        "INFOPLIST_FILE: NowJot/Info.plist",
+        "ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon",
+        "schemes:",
+        "NowJot: all",
+    ]
+    missing_tokens = [token for token in required_project_tokens if token not in project_yml]
+    if missing_tokens:
+        fail(f"project.yml is missing required iOS build tokens: {missing_tokens}")
 
 
 def check_motion_coverage() -> None:
