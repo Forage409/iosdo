@@ -1,0 +1,72 @@
+workflows:
+  ios-simulator-debug:
+    name: NowJot iOS Simulator Debug
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+    environment:
+      xcode: latest
+      vars:
+        XCODE_PROJECT: "NowJot.xcodeproj"
+        XCODE_SCHEME: "NowJot"
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: "main"
+          include: true
+          source: true
+    scripts:
+      - name: Validate repository guardrails
+        script: |
+          set -euo pipefail
+          python3 scripts/validate_workspace.py
+      - name: Build unsigned simulator app
+        script: |
+          set -euo pipefail
+          xcodebuild build \
+            -project "$CM_BUILD_DIR/$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO | tee xcodebuild-simulator.log
+    artifacts:
+      - xcodebuild-simulator.log
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.app
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+
+  ios-release-ipa:
+    name: NowJot iOS Release IPA
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+    environment:
+      xcode: latest
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.quang.nowjot
+      vars:
+        BUNDLE_ID: "com.quang.nowjot"
+        XCODE_PROJECT: "NowJot.xcodeproj"
+        XCODE_SCHEME: "NowJot"
+    scripts:
+      - name: Validate repository guardrails
+        script: |
+          set -euo pipefail
+          python3 scripts/validate_workspace.py
+      - name: Set up code signing settings
+        script: |
+          set -euo pipefail
+          xcode-project use-profiles
+      - name: Build IPA for distribution
+        script: |
+          set -euo pipefail
+          xcode-project build-ipa \
+            --project "$CM_BUILD_DIR/$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.app
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
