@@ -42,12 +42,19 @@ def check_plist() -> None:
 
 def check_scheme() -> None:
     scheme_path = ROOT / "NowJot.xcodeproj" / "xcshareddata" / "xcschemes" / "NowJot.xcscheme"
-    ET.parse(scheme_path)
-    scheme = scheme_path.read_text(encoding="utf-8")
+    scheme_tree = ET.parse(scheme_path)
     pbx = (ROOT / "NowJot.xcodeproj" / "project.pbxproj").read_text(encoding="utf-8")
-    target_id = "E715C5BB021D5230BBAF433E"
-    if target_id not in scheme or target_id not in pbx:
-        fail("Scheme target id is not aligned with the project target id.")
+    references = scheme_tree.findall(".//BuildableReference")
+    target_ids = {
+        reference.attrib["BlueprintIdentifier"]
+        for reference in references
+        if reference.attrib.get("BlueprintName") == "NowJot"
+    }
+    if not target_ids:
+        fail("NowJot scheme does not contain a NowJot buildable reference.")
+    missing = [target_id for target_id in sorted(target_ids) if target_id not in pbx]
+    if missing:
+        fail(f"Scheme target id is not aligned with the project target id: {missing}")
 
 
 def check_swift_structure() -> None:
